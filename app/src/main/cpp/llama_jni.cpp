@@ -48,6 +48,7 @@ struct Session {
 Session           g;
 std::mutex        g_mtx;
 std::atomic<bool> g_stop{false};
+std::atomic<bool> g_loaded{false};   // lock ke bina padh sakte hain
 bool              g_backendInit = false;
 
 // ---------------- helpers ----------------
@@ -130,21 +131,88 @@ std::vector<llama_token> tokenize(const std::string &text, bool addSpecial) {
 
 bool isSystemRole(const std::string &r) { return r == "system" || r == "developer"; }
 
+// ---------- Gemma 4 thinking filter ----------
+// Model kabhi "<|channel>thought ... <channel|>" ya bina opening ke "soch... <channel|>" likh deta hai.
+// Client ko sirf final jawab dikhana hai.
+const std::string kOpen  = "<|channel>";
+const std::string kClose = "<channel|>";
+
+std::string visibleText(const std::string &raw) {
+    std::string s = raw;
+    size_t a;
+    while ((a = s.find(kOpen)) != std::string::npos) {
+        size_t b = s.find(kClose, a + kOpen.size());
+        if (b == std::string::npos) { s.erase(a); break; }   // thinking abhi chal rahi hai
+        s.erase(a, b + kClose.size() - a);
+    }
+    size_t c = s.rfind(kClose);                               // bina opening ka close tag
+    if (c != std::string::npos) s.erase(0, c + kClose.size());
+    size_t b = s.find_first_not_of(" \t\r\n");
+    return b == std::string::npos ? std::string() : s.substr(b);
+}
+
+// Thinking ON: prompt "<|channel>thought\n" pe khatam hota hai, isliye output thinking se shuru hota hai.
+// Client ko: "<thought>\n...soch...\n</thought>\n\njawab"
+std::string thinkingText(const std::string &raw, bool final) {
+    std::string out = "<thought>\n";
+    size_t c = raw.find(kClose);
+    if (c == std::string::npos) {
+        out += raw;
+        if (final) out = trim(out) + "\n</thought>";
+        return out;
+    }
+    // trim nahi: stream me pehle bheja gaya text same rehna chahiye
+    std::string th = raw.substr(0, c);
+    out += th;
+    out += (!th.empty() && th.back() == '\n') ? "</thought>\n\n" : "\n</thought>\n\n";
+    // jawab me bache hue extra tags hata do
+    out += visibleText(raw.substr(c + kClose.size()));
+    return out;
+}
+
+// History ke assistant messages se <thought>...</thought> hatao (Gemma bhi purani thinking strip karta hai)
+std::string stripThoughtBlocks(const std::string &in) {
+    std::string s = in;
+    size_t a;
+    while ((a = s.find("<thought>")) != std::string::npos) {
+        size_t b = s.find("</thought>", a);
+        if (b == std::string::npos) { s.erase(a); break; }
+        s.erase(a, b + 10 - a);
+    }
+    return visibleText(s);
+}
+
+// End me adhura tag ("<chan") ho to use abhi mat bhejo
+std::string holdPartialTag(const std::string &s) {
+    for (const std::string *tag : {&kOpen, &kClose}) {
+        for (size_t len = std::min(tag->size() - 1, s.size()); len > 0; --len) {
+            if (s.compare(s.size() - len, len, *tag, 0, len) == 0) return s.substr(0, s.size() - len);
+        }
+    }
+    return s;
+}
+
 // ---------- prompt formatting ----------
 
-std::string formatGemma4(const std::vector<std::string> &roles, const std::vector<std::string> &contents) {
+std::string formatGemma4(const std::vector<std::string> &roles, const std::vector<std::string> &contents,
+                         bool thinking) {
     std::string out;
     size_t i = 0;
     // sirf pehla system message system turn banta hai (Gemma 4 template jaisa)
+    std::string sys;
     if (!roles.empty() && isSystemRole(roles[0])) {
-        std::string sys = trim(contents[0]);
-        if (!sys.empty()) out += "<|turn>system\n" + sys + "<turn|>\n";
+        sys = trim(contents[0]);
         i = 1;
+    }
+    if (thinking) {
+        out += "<|turn>system\n<|think|>\n" + sys + "<turn|>\n";   // <|think|> = thinking on
+    } else if (!sys.empty()) {
+        out += "<|turn>system\n" + sys + "<turn|>\n";
     }
     for (; i < roles.size(); ++i) {
         const std::string &r = roles[i];
         if (r == "assistant") {
-            out += "<|turn>model\n" + trim(contents[i]) + "<turn|>\n";
+            out += "<|turn>model\n" + stripThoughtBlocks(contents[i]) + "<turn|>\n";
         } else {
             // user, tool, beech ka system -> user turn
             std::string c = trim(contents[i]);
@@ -152,7 +220,8 @@ std::string formatGemma4(const std::vector<std::string> &roles, const std::vecto
             out += "<|turn>user\n" + c + "<turn|>\n";
         }
     }
-    out += "<|turn>model\n<|channel>thought\n<channel|>";   // thinking off
+    out += thinking ? "<|turn>model\n<|channel>thought\n"   // seedha thinking se shuru
+                    : "<|turn>model\n";                       // thinking off
     return out;
 }
 
@@ -201,6 +270,7 @@ void clearCache() {
 }
 
 void unloadAll() {
+    g_loaded.store(false);
     if (g.smpl)  { llama_sampler_free(g.smpl); g.smpl = nullptr; }
     if (g.ctx)   { llama_free(g.ctx);          g.ctx = nullptr; }
     if (g.model) { llama_model_free(g.model);  g.model = nullptr; }
@@ -273,6 +343,7 @@ Java_com_suvo_localllm_LlamaBridge_nativeLoad(JNIEnv *env, jclass,
     }
 
     buildSampler(0.7f, 0.95f, 40, 0.0f, 0.0f);
+    g_loaded.store(true);
     LOGI("Model loaded. ctx=%d threads=%d format=%s", nCtx, nThreads,
          g.fmt == FMT_GEMMA4 ? "gemma4" : "template");
     return nullptr;
@@ -280,8 +351,7 @@ Java_com_suvo_localllm_LlamaBridge_nativeLoad(JNIEnv *env, jclass,
 
 JNIEXPORT jboolean JNICALL
 Java_com_suvo_localllm_LlamaBridge_nativeIsLoaded(JNIEnv *, jclass) {
-    std::lock_guard<std::mutex> lock(g_mtx);
-    return (g.model && g.ctx) ? JNI_TRUE : JNI_FALSE;
+    return g_loaded.load() ? JNI_TRUE : JNI_FALSE;
 }
 
 // OpenAI style completion. roles[] / contents[] = poori messages list.
@@ -292,7 +362,7 @@ Java_com_suvo_localllm_LlamaBridge_nativeComplete(JNIEnv *env, jclass,
                                                   jobjectArray jRoles, jobjectArray jContents,
                                                   jint maxTokens, jfloat temp, jfloat topP, jint topK,
                                                   jfloat freqPenalty, jfloat presencePenalty,
-                                                  jobject callback) {
+                                                  jboolean jThinking, jobject callback) {
     std::lock_guard<std::mutex> lock(g_mtx);
     g.lastPrompt = g.lastCompletion = g.lastReused = 0;
     g.lastFinish = FINISH_STOP;
@@ -314,7 +384,8 @@ Java_com_suvo_localllm_LlamaBridge_nativeComplete(JNIEnv *env, jclass,
         return toJString(env, "[ERROR] messages khaali ya galat hain");
     }
 
-    std::string prompt = (g.fmt == FMT_GEMMA4) ? formatGemma4(roles, contents)
+    const bool thinking = jThinking == JNI_TRUE && g.fmt == FMT_GEMMA4;
+    std::string prompt = (g.fmt == FMT_GEMMA4) ? formatGemma4(roles, contents, thinking)
                                                : formatTemplate(roles, contents);
     if (prompt.empty()) return toJString(env, "[ERROR] Chat template apply nahi hua");
 
@@ -362,7 +433,9 @@ Java_com_suvo_localllm_LlamaBridge_nativeComplete(JNIEnv *env, jclass,
     int budget = nCtx - (int) g.cached.size() - 1;
     if (maxTokens <= 0 || maxTokens > budget) maxTokens = budget;
 
-    std::string response, pending;
+    std::string raw;          // model ka poora output (thinking samet)
+    size_t emitted = 0;       // visible text ka kitna hissa client ko bhej chuke
+    std::string emittedText;
     llama_token tok = 0;
     int generated = 0;
     g.lastFinish = FINISH_LENGTH;
@@ -376,14 +449,16 @@ Java_com_suvo_localllm_LlamaBridge_nativeComplete(JNIEnv *env, jclass,
         char buf[256];
         int n = llama_token_to_piece(g.vocab, tok, buf, sizeof(buf), 0, false);
         if (n < 0) n = 0;
-        pending.append(buf, n);
-        response.append(buf, n);
+        raw.append(buf, n);
 
-        size_t ok = completeUtf8Prefix(pending);
-        if (ok > 0) {
+        // Thinking hata ke jo dikhana hai wahi stream karo
+        std::string vis = holdPartialTag(thinking ? thinkingText(raw, false) : visibleText(raw));
+        vis.resize(completeUtf8Prefix(vis));
+        if (vis.size() > emitted && vis.compare(0, emitted, emittedText) == 0) {
+            std::string delta = vis.substr(emitted);
             if (onToken) {
-                jbyteArray arr = env->NewByteArray((jsize) ok);
-                env->SetByteArrayRegion(arr, 0, (jsize) ok, reinterpret_cast<const jbyte *>(pending.data()));
+                jbyteArray arr = env->NewByteArray((jsize) delta.size());
+                env->SetByteArrayRegion(arr, 0, (jsize) delta.size(), reinterpret_cast<const jbyte *>(delta.data()));
                 env->CallVoidMethod(callback, onToken, arr);
                 env->DeleteLocalRef(arr);
                 if (env->ExceptionCheck()) {
@@ -391,7 +466,8 @@ Java_com_suvo_localllm_LlamaBridge_nativeComplete(JNIEnv *env, jclass,
                     g_stop.store(true);   // client chala gaya
                 }
             }
-            pending.erase(0, ok);
+            emittedText = vis;
+            emitted = vis.size();
         }
 
         llama_batch batch = llama_batch_get_one(&tok, 1);
@@ -405,7 +481,7 @@ Java_com_suvo_localllm_LlamaBridge_nativeComplete(JNIEnv *env, jclass,
     }
 
     g.lastCompletion = generated;
-    return toJString(env, response);
+    return toJString(env, trim(thinking ? thinkingText(raw, true) : visibleText(raw)));
 }
 
 // [promptTokens, completionTokens, reusedTokens, finish(0=stop,1=length,2=cancelled)]
