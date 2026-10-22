@@ -25,11 +25,7 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="12dp">
 
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:padding="16dp">
+            <LinearLayout style="@style/CardBody">
 
                 <LinearLayout
                     android:layout_width="match_parent"
@@ -75,8 +71,8 @@
                         android:layout_weight="1"
                         android:fontFamily="monospace"
                         android:text="http://127.0.0.1:8080/v1"
-                        android:textIsSelectable="true"
-                        android:textAppearance="?attr/textAppearanceBodyMedium" />
+                        android:textAppearance="?attr/textAppearanceBodyMedium"
+                        android:textIsSelectable="true" />
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/btnCopy"
@@ -88,39 +84,46 @@
 
                 <TextView
                     android:id="@+id/tvModelId"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
+                    style="@style/Hint"
                     android:fontFamily="monospace"
-                    android:text="model: -"
-                    android:textAppearance="?attr/textAppearanceBodySmall" />
+                    android:text="model: -" />
 
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btnService"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="12dp"
-                    android:text="Start server" />
+                <TextView
+                    android:id="@+id/tvTiming"
+                    style="@style/Hint"
+                    android:layout_marginTop="6dp"
+                    android:text="" />
+
+                <LinearLayout style="@style/Row">
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnService"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_marginEnd="6dp"
+                        android:layout_weight="1"
+                        android:text="Start server" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnBench"
+                        style="@style/Widget.Material3.Button.TonalButton"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="6dp"
+                        android:layout_weight="1"
+                        android:text="Speed test" />
+                </LinearLayout>
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
         <!-- ================= Model ================= -->
-        <com.google.android.material.card.MaterialCardView
-            style="@style/Widget.Material3.CardView.Outlined"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="12dp">
+        <com.google.android.material.card.MaterialCardView style="@style/Card">
 
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:padding="16dp">
+            <LinearLayout style="@style/CardBody">
 
                 <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="Model"
-                    android:textAppearance="?attr/textAppearanceTitleSmall" />
+                    style="@style/CardTitle"
+                    android:text="Model" />
 
                 <TextView
                     android:id="@+id/tvModel"
@@ -129,6 +132,11 @@
                     android:layout_marginTop="4dp"
                     android:text="Model nahi hai"
                     android:textAppearance="?attr/textAppearanceBodyMedium" />
+
+                <TextView
+                    android:id="@+id/tvModelInfo"
+                    style="@style/Hint"
+                    android:visibility="gone" />
 
                 <LinearLayout
                     android:id="@+id/downloadBox"
@@ -146,10 +154,8 @@
 
                     <TextView
                         android:id="@+id/tvDownload"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="4dp"
-                        android:textAppearance="?attr/textAppearanceBodySmall" />
+                        style="@style/Hint"
+                        android:layout_marginTop="4dp" />
                 </LinearLayout>
 
                 <com.google.android.material.button.MaterialButton
@@ -168,36 +174,61 @@
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
+        <!-- ================= Speed presets ================= -->
+        <com.google.android.material.card.MaterialCardView style="@style/Card">
+
+            <LinearLayout style="@style/CardBody">
+
+                <TextView
+                    style="@style/CardTitle"
+                    android:text="Speed preset (1 click)" />
+
+                <TextView
+                    android:id="@+id/tvCpu"
+                    style="@style/Hint" />
+
+                <LinearLayout style="@style/Row">
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnRocket"
+                        style="@style/ToggleBtn"
+                        android:text="🚀 Rocket" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnBalanced"
+                        style="@style/ToggleBtn"
+                        android:layout_marginStart="6dp"
+                        android:layout_marginEnd="6dp"
+                        android:text="⚖️ Balanced" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnQuality"
+                        style="@style/ToggleBtn"
+                        android:text="🧠 Quality" />
+                </LinearLayout>
+
+                <TextView
+                    style="@style/Hint"
+                    android:layout_marginTop="6dp"
+                    android:text="Rocket: chhota context, fast cores, q8 KV cache, chhote jawab, thinking off. Quality: bada context, thinking on. Preset ke baad neeche Save dabao." />
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
         <!-- ================= System prompt ================= -->
-        <com.google.android.material.card.MaterialCardView
-            style="@style/Widget.Material3.CardView.Outlined"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="12dp">
+        <com.google.android.material.card.MaterialCardView style="@style/Card">
 
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:padding="16dp">
+            <LinearLayout style="@style/CardBody">
 
                 <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="Default system prompt"
-                    android:textAppearance="?attr/textAppearanceTitleSmall" />
+                    style="@style/CardTitle"
+                    android:text="Default system prompt" />
 
                 <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="Request me system message na ho tab ye lagta hai"
-                    android:textAppearance="?attr/textAppearanceBodySmall" />
+                    style="@style/Hint"
+                    android:text="Request me system message na ho tab ye lagta hai" />
 
                 <com.google.android.material.textfield.TextInputLayout
-                    style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="8dp">
+                    style="@style/FieldFull">
 
                     <com.google.android.material.textfield.TextInputEditText
                         android:id="@+id/etSystem"
@@ -205,188 +236,376 @@
                         android:layout_height="wrap_content"
                         android:gravity="top"
                         android:inputType="textMultiLine|textCapSentences"
-                        android:minLines="4"
+                        android:minLines="3"
                         android:textSize="14sp" />
                 </com.google.android.material.textfield.TextInputLayout>
-
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btnSavePrompt"
-                    style="@style/Widget.Material3.Button.TonalButton"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_gravity="end"
-                    android:layout_marginTop="8dp"
-                    android:text="Save prompt" />
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
-        <!-- ================= Settings ================= -->
-        <com.google.android.material.card.MaterialCardView
-            style="@style/Widget.Material3.CardView.Outlined"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="12dp">
+        <!-- ================= Self learning ================= -->
+        <com.google.android.material.card.MaterialCardView style="@style/Card">
 
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:padding="16dp">
+            <LinearLayout style="@style/CardBody">
 
                 <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="Settings"
-                    android:textAppearance="?attr/textAppearanceTitleSmall" />
+                    style="@style/CardTitle"
+                    android:text="Self-learning (chat se seekhna)" />
 
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="8dp"
-                    android:orientation="horizontal">
+                <TextView
+                    style="@style/Hint"
+                    android:text="Khaali time me model pichli chats padh ke user ke baare me kaam ki baatein note karta hai (naam, pasand, kaam...). Ye baatein har request me yaad dilayi jaati hain. Model ki files nahi badalti." />
+
+                <com.google.android.material.materialswitch.MaterialSwitch
+                    android:id="@+id/swLearning"
+                    style="@style/Switch"
+                    android:text="Chats se seekho" />
+
+                <com.google.android.material.materialswitch.MaterialSwitch
+                    android:id="@+id/swUseMemory"
+                    style="@style/Switch"
+                    android:text="Seekhi baatein jawab me use karo" />
+
+                <LinearLayout style="@style/Row">
 
                     <com.google.android.material.textfield.TextInputLayout
-                        style="@style/Widget.Material3.TextInputLayout.OutlinedBox.Dense"
+                        style="@style/FieldHalf"
+                        android:hint="Max yaad (baatein)">
+
+                        <com.google.android.material.textfield.TextInputEditText
+                            android:id="@+id/etMaxMem"
+                            style="@style/NumberInput" />
+                    </com.google.android.material.textfield.TextInputLayout>
+
+                    <TextView
+                        android:id="@+id/tvMemCount"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_gravity="center_vertical"
+                        android:layout_weight="1"
+                        android:gravity="center"
+                        android:text="0 baatein yaad"
+                        android:textAppearance="?attr/textAppearanceBodyMedium" />
+                </LinearLayout>
+
+                <LinearLayout style="@style/Row">
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnMemView"
+                        style="@style/Widget.Material3.Button.TonalButton"
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
                         android:layout_marginEnd="6dp"
                         android:layout_weight="1"
-                        android:hint="Port">
+                        android:text="Dekho / hatao" />
 
-                        <com.google.android.material.textfield.TextInputEditText
-                            android:id="@+id/etPort"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:inputType="number"
-                            android:maxLength="5" />
-                    </com.google.android.material.textfield.TextInputLayout>
-
-                    <com.google.android.material.textfield.TextInputLayout
-                        style="@style/Widget.Material3.TextInputLayout.OutlinedBox.Dense"
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnMemClear"
+                        style="@style/Widget.Material3.Button.OutlinedButton"
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
                         android:layout_marginStart="6dp"
                         android:layout_weight="1"
-                        android:hint="Context size">
+                        android:text="Sab bhool jao" />
+                </LinearLayout>
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <!-- ================= Performance (model reload) ================= -->
+        <com.google.android.material.card.MaterialCardView style="@style/Card">
+
+            <LinearLayout style="@style/CardBody">
+
+                <TextView
+                    style="@style/CardTitle"
+                    android:text="Performance (badalne pe model reload)" />
+
+                <LinearLayout style="@style/Row">
+
+                    <com.google.android.material.textfield.TextInputLayout
+                        style="@style/FieldHalf"
+                        android:hint="Context (0 = model max)">
 
                         <com.google.android.material.textfield.TextInputEditText
                             android:id="@+id/etCtx"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:inputType="number"
-                            android:maxLength="6" />
+                            style="@style/NumberInput" />
+                    </com.google.android.material.textfield.TextInputLayout>
+
+                    <com.google.android.material.textfield.TextInputLayout
+                        style="@style/FieldHalf"
+                        android:hint="Batch size">
+
+                        <com.google.android.material.textfield.TextInputEditText
+                            android:id="@+id/etBatch"
+                            style="@style/NumberInput" />
                     </com.google.android.material.textfield.TextInputLayout>
                 </LinearLayout>
 
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="8dp"
-                    android:orientation="horizontal">
+                <LinearLayout style="@style/Row">
 
                     <com.google.android.material.textfield.TextInputLayout
-                        style="@style/Widget.Material3.TextInputLayout.OutlinedBox.Dense"
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_marginEnd="6dp"
-                        android:layout_weight="1"
-                        android:hint="CPU threads">
+                        style="@style/FieldHalf"
+                        android:hint="Threads (jawab)">
 
                         <com.google.android.material.textfield.TextInputEditText
                             android:id="@+id/etThreads"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:inputType="number"
-                            android:maxLength="2" />
+                            style="@style/NumberInput" />
                     </com.google.android.material.textfield.TextInputLayout>
 
                     <com.google.android.material.textfield.TextInputLayout
-                        style="@style/Widget.Material3.TextInputLayout.OutlinedBox.Dense"
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_marginStart="6dp"
-                        android:layout_weight="1"
-                        android:hint="Default max tokens">
+                        style="@style/FieldHalf"
+                        android:hint="Threads (prompt padhna)">
 
                         <com.google.android.material.textfield.TextInputEditText
-                            android:id="@+id/etMaxTokens"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:inputType="number"
-                            android:maxLength="5" />
+                            android:id="@+id/etThreadsBatch"
+                            style="@style/NumberInput" />
                     </com.google.android.material.textfield.TextInputLayout>
                 </LinearLayout>
 
                 <com.google.android.material.textfield.TextInputLayout
-                    style="@style/Widget.Material3.TextInputLayout.OutlinedBox.Dense"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="8dp"
-                    android:hint="API key (khaali = koi key nahi)">
+                    style="@style/FieldFull"
+                    android:hint="Micro batch (ubatch)">
 
                     <com.google.android.material.textfield.TextInputEditText
-                        android:id="@+id/etApiKey"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:inputType="text"
-                        android:singleLine="true" />
+                        android:id="@+id/etUbatch"
+                        style="@style/NumberInput" />
+                </com.google.android.material.textfield.TextInputLayout>
+
+                <TextView
+                    style="@style/Hint"
+                    android:layout_marginTop="10dp"
+                    android:text="Flash attention" />
+
+                <com.google.android.material.button.MaterialButtonToggleGroup
+                    android:id="@+id/tgFlash"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    app:selectionRequired="true"
+                    app:singleSelection="true">
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/faAuto"
+                        style="@style/ToggleBtn"
+                        android:text="Auto" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/faOn"
+                        style="@style/ToggleBtn"
+                        android:text="On" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/faOff"
+                        style="@style/ToggleBtn"
+                        android:text="Off" />
+                </com.google.android.material.button.MaterialButtonToggleGroup>
+
+                <TextView
+                    style="@style/Hint"
+                    android:layout_marginTop="10dp"
+                    android:text="KV cache (q8/q4 = kam RAM, lambe context me tez)" />
+
+                <com.google.android.material.button.MaterialButtonToggleGroup
+                    android:id="@+id/tgKv"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    app:selectionRequired="true"
+                    app:singleSelection="true">
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/kvF16"
+                        style="@style/ToggleBtn"
+                        android:text="f16" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/kvQ8"
+                        style="@style/ToggleBtn"
+                        android:text="q8_0" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/kvQ4"
+                        style="@style/ToggleBtn"
+                        android:text="q4_0" />
+                </com.google.android.material.button.MaterialButtonToggleGroup>
+
+                <com.google.android.material.materialswitch.MaterialSwitch
+                    android:id="@+id/swFastGen"
+                    style="@style/Switch"
+                    android:layout_marginTop="8dp"
+                    android:text="Jawab sirf fast cores pe banao" />
+
+                <com.google.android.material.materialswitch.MaterialSwitch
+                    android:id="@+id/swFastBatch"
+                    style="@style/Switch"
+                    android:text="Prompt padhna bhi sirf fast cores pe" />
+
+                <com.google.android.material.materialswitch.MaterialSwitch
+                    android:id="@+id/swMmap"
+                    style="@style/Switch"
+                    android:text="mmap (off = model poora RAM me, kabhi-kabhi tez)" />
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <!-- ================= Generation defaults ================= -->
+        <com.google.android.material.card.MaterialCardView style="@style/Card">
+
+            <LinearLayout style="@style/CardBody">
+
+                <TextView
+                    style="@style/CardTitle"
+                    android:text="Jawab ki setting (default)" />
+
+                <TextView
+                    style="@style/Hint"
+                    android:text="Request me ye values bhejoge to wo use hongi" />
+
+                <LinearLayout style="@style/Row">
+
+                    <com.google.android.material.textfield.TextInputLayout
+                        style="@style/FieldHalf"
+                        android:hint="Max tokens">
+
+                        <com.google.android.material.textfield.TextInputEditText
+                            android:id="@+id/etMaxTokens"
+                            style="@style/NumberInput" />
+                    </com.google.android.material.textfield.TextInputLayout>
+
+                    <com.google.android.material.textfield.TextInputLayout
+                        style="@style/FieldHalf"
+                        android:hint="Temperature">
+
+                        <com.google.android.material.textfield.TextInputEditText
+                            android:id="@+id/etTemp"
+                            style="@style/DecimalInput" />
+                    </com.google.android.material.textfield.TextInputLayout>
+                </LinearLayout>
+
+                <LinearLayout style="@style/Row">
+
+                    <com.google.android.material.textfield.TextInputLayout
+                        style="@style/FieldHalf"
+                        android:hint="Top K">
+
+                        <com.google.android.material.textfield.TextInputEditText
+                            android:id="@+id/etTopK"
+                            style="@style/NumberInput" />
+                    </com.google.android.material.textfield.TextInputLayout>
+
+                    <com.google.android.material.textfield.TextInputLayout
+                        style="@style/FieldHalf"
+                        android:hint="Top P">
+
+                        <com.google.android.material.textfield.TextInputEditText
+                            android:id="@+id/etTopP"
+                            style="@style/DecimalInput" />
+                    </com.google.android.material.textfield.TextInputLayout>
+                </LinearLayout>
+
+                <LinearLayout style="@style/Row">
+
+                    <com.google.android.material.textfield.TextInputLayout
+                        style="@style/FieldHalf"
+                        android:hint="Min P">
+
+                        <com.google.android.material.textfield.TextInputEditText
+                            android:id="@+id/etMinP"
+                            style="@style/DecimalInput" />
+                    </com.google.android.material.textfield.TextInputLayout>
+
+                    <com.google.android.material.textfield.TextInputLayout
+                        style="@style/FieldHalf"
+                        android:hint="Repeat penalty">
+
+                        <com.google.android.material.textfield.TextInputEditText
+                            android:id="@+id/etRepeat"
+                            style="@style/DecimalInput" />
+                    </com.google.android.material.textfield.TextInputLayout>
+                </LinearLayout>
+
+                <com.google.android.material.textfield.TextInputLayout
+                    style="@style/FieldFull"
+                    android:hint="Repeat last N">
+
+                    <com.google.android.material.textfield.TextInputEditText
+                        android:id="@+id/etRepeatN"
+                        style="@style/NumberInput" />
                 </com.google.android.material.textfield.TextInputLayout>
 
                 <com.google.android.material.materialswitch.MaterialSwitch
                     android:id="@+id/swThinking"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
+                    style="@style/Switch"
                     android:layout_marginTop="8dp"
-                    android:text="Thinking (&lt;thought&gt; block reply me)" />
+                    android:text="Thinking (&lt;thought&gt; block, sirf Gemma 4)" />
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <!-- ================= Server ================= -->
+        <com.google.android.material.card.MaterialCardView style="@style/Card">
+
+            <LinearLayout style="@style/CardBody">
+
+                <TextView
+                    style="@style/CardTitle"
+                    android:text="Server" />
+
+                <LinearLayout style="@style/Row">
+
+                    <com.google.android.material.textfield.TextInputLayout
+                        style="@style/FieldHalf"
+                        android:hint="Port">
+
+                        <com.google.android.material.textfield.TextInputEditText
+                            android:id="@+id/etPort"
+                            style="@style/NumberInput"
+                            android:maxLength="5" />
+                    </com.google.android.material.textfield.TextInputLayout>
+
+                    <com.google.android.material.textfield.TextInputLayout
+                        style="@style/FieldHalf"
+                        android:hint="API key (optional)">
+
+                        <com.google.android.material.textfield.TextInputEditText
+                            android:id="@+id/etApiKey"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:inputType="text"
+                            android:singleLine="true" />
+                    </com.google.android.material.textfield.TextInputLayout>
+                </LinearLayout>
 
                 <com.google.android.material.materialswitch.MaterialSwitch
                     android:id="@+id/swLan"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
+                    style="@style/Switch"
                     android:layout_marginTop="8dp"
                     android:text="WiFi network pe bhi allow karo (LAN)" />
 
                 <com.google.android.material.materialswitch.MaterialSwitch
                     android:id="@+id/swAutoStart"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
+                    style="@style/Switch"
                     android:text="Phone restart pe auto start" />
-
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btnApply"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="8dp"
-                    android:text="Save &amp; restart server" />
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
-        <!-- ================= Background ================= -->
-        <com.google.android.material.card.MaterialCardView
-            style="@style/Widget.Material3.CardView.Outlined"
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnApply"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
-            android:layout_marginBottom="16dp">
+            android:layout_marginTop="16dp"
+            android:text="💾 Save &amp; apply" />
 
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:padding="16dp">
+        <!-- ================= Background ================= -->
+        <com.google.android.material.card.MaterialCardView
+            style="@style/Card"
+            android:layout_marginBottom="24dp">
+
+            <LinearLayout style="@style/CardBody">
 
                 <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="Background me chalne ke liye"
-                    android:textAppearance="?attr/textAppearanceTitleSmall" />
+                    style="@style/CardTitle"
+                    android:text="Background me chalne ke liye" />
 
                 <TextView
                     android:id="@+id/tvBattery"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="4dp"
-                    android:textAppearance="?attr/textAppearanceBodySmall" />
+                    style="@style/Hint"
+                    android:layout_marginTop="4dp" />
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btnBattery"
