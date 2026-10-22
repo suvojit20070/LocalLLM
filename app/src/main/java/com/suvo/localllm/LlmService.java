@@ -31,7 +31,6 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -51,6 +50,17 @@ public class LlmService extends Service implements OpenAiServer.Engine {
     private static final String CHANNEL_ID = "llm_service";
     private static final int NOTIF_ID = 101;
 
+    /**
+     * Poore process ka EK hi native worker thread (kabhi band nahi hota).
+     * Isse load / unload / generate hamesha line se chalte hain, aur purane service
+     * object ka unload naye object ke load ke baad nahi chal sakta.
+     */
+    private static final ExecutorService WORKER = Executors.newSingleThreadExecutor(r -> {
+        Thread t = new Thread(r, "llm-worker");
+        t.setPriority(Thread.NORM_PRIORITY + 1);
+        return t;
+    });
+
     public enum State { STOPPED, NO_MODEL, LOADING, READY, GENERATING, ERROR }
 
     public interface StatusListener {
@@ -69,13 +79,11 @@ public class LlmService extends Service implements OpenAiServer.Engine {
     private final AtomicInteger activeRequests = new AtomicInteger(0);
     private final AtomicInteger servedRequests = new AtomicInteger(0);
 
-    // Saara native kaam isi ek thread pe (llama.cpp context thread-safe nahi hai)
-    private ExecutorService worker = newWorker();
-
     private Prefs prefs;
     private PowerManager.WakeLock wakeLock;
     private OpenAiServer server;
 
+    private volatile boolean alive = false;
     private volatile State state = State.STOPPED;
     private volatile String statusMessage = "Service band hai";
     private volatile String loadedPath = null;
@@ -133,22 +141,14 @@ public class LlmService extends Service implements OpenAiServer.Engine {
             return START_NOT_STICKY;
         }
 
-        // Stop ke baad Activity bound rahi ho to object zinda rehta hai, naya worker chahiye
-        if (worker.isShutdown()) {
-            ExecutorService old = worker;
-            worker = newWorker();
-            worker.execute(() -> {
-                try { old.awaitTermination(30, TimeUnit.SECONDS); } catch (InterruptedException ignored) { }
-            });
-        }
-
+        alive = true;
         boolean reload = ACTION_RELOAD.equals(action);
         startServer(reload);
 
         if (!prefs.hasModel()) {
             setState(State.NO_MODEL, "Model nahi hai. App kholke download/select karo");
-        } else if (state != State.LOADING && (loadedPath == null || reload
-                || !loadedPath.equals(prefs.getModelPath()))) {
+        } else if (state != State.LOADING && (reload || !isReady()
+                || !prefs.getModelPath().equals(loadedPath))) {
             loadModel(prefs.getModelPath());
         }
 
@@ -163,20 +163,18 @@ public class LlmService extends Service implements OpenAiServer.Engine {
 
     @Override
     public void onDestroy() {
-        shutdown();
+        if (alive) shutdown();
         super.onDestroy();
     }
 
     private void shutdown() {
+        alive = false;
         if (server != null) {
             server.stop();
             server = null;
         }
         LlamaBridge.nativeStop();
-        if (!worker.isShutdown()) {
-            worker.execute(LlamaBridge::nativeUnload);
-            worker.shutdown();
-        }
+        WORKER.execute(LlamaBridge::nativeUnload);   // line me lagta hai, baad wale load se pehle chalega
         loadedPath = null;
         state = State.STOPPED;
         statusMessage = "Service band hai";
@@ -199,10 +197,8 @@ public class LlmService extends Service implements OpenAiServer.Engine {
         }
     }
 
-    /** Endpoint URL jo dusre apps use karenge */
     public String getEndpoint() {
-        String host = "127.0.0.1";
-        return "http://" + host + ":" + prefs.getPort() + "/v1";
+        return "http://127.0.0.1:" + prefs.getPort() + "/v1";
     }
 
     /** LAN access on ho to WiFi IP wala URL, warna null */
@@ -233,10 +229,10 @@ public class LlmService extends Service implements OpenAiServer.Engine {
     }
 
     private void loadModel(String path) {
-        if (worker.isShutdown()) return;
         setState(State.LOADING, "Model load ho raha hai…");
-        worker.execute(() -> {
-            loadedPath = null;
+        loadedPath = null;
+        WORKER.execute(() -> {
+            if (!alive) return;   // beech me Stop ho gaya
             if (!new File(path).isFile()) {
                 setState(State.NO_MODEL, "Model file nahi mili");
                 return;
@@ -255,6 +251,7 @@ public class LlmService extends Service implements OpenAiServer.Engine {
                     setState(State.ERROR, "Model ready, lekin port " + prefs.getPort() + " busy hai. Port badlo");
                 }
             } else {
+                Log.e(TAG, "load fail: " + err);
                 setState(State.ERROR, err);
             }
         });
@@ -262,8 +259,11 @@ public class LlmService extends Service implements OpenAiServer.Engine {
 
     // ------------------------------------------------------------------ OpenAiServer.Engine
 
+    /** Java aur native dono ke hisaab se model ready ho */
     @Override
-    public boolean isReady() { return loadedPath != null && !worker.isShutdown(); }
+    public boolean isReady() {
+        return alive && loadedPath != null && LlamaBridge.nativeIsLoaded();
+    }
 
     @Override
     public String getStatusMessage() { return statusMessage; }
@@ -277,20 +277,32 @@ public class LlmService extends Service implements OpenAiServer.Engine {
     @Override
     public int getDefaultMaxTokens() { return prefs.getDefaultMaxTokens(); }
 
+    @Override
+    public boolean isThinkingDefault() { return prefs.isThinking(); }
+
     /** Blocking. Server ke client threads se call hota hai; requests worker pe line me lagti hain. */
     @Override
     public OpenAiServer.Completion complete(String[] roles, String[] contents,
                                             OpenAiServer.GenParams p, LlamaBridge.TokenCallback cb) {
-        if (!isReady()) return OpenAiServer.Completion.error("Model ready nahi hai: " + statusMessage);
+        if (!isReady()) {
+            // Java ko laga loaded hai par native me model nahi -> khud reload karo
+            if (alive && loadedPath != null && state != State.LOADING) {
+                Log.w(TAG, "native model missing, reload kar rahe hain");
+                main.post(() -> loadModel(prefs.getModelPath()));
+                return OpenAiServer.Completion.error("Model reload ho raha hai, 30 sec baad dobara try karo");
+            }
+            return OpenAiServer.Completion.error("Model ready nahi hai: " + statusMessage);
+        }
 
         if (activeRequests.incrementAndGet() == 1) setState(State.GENERATING, "Reply bana raha hai…");
         try {
-            Future<OpenAiServer.Completion> f = worker.submit(() -> {
+            Future<OpenAiServer.Completion> f = WORKER.submit(() -> {
                 wakeLock.acquire(10 * 60 * 1000L); // screen off me bhi CPU chalta rahe
                 try {
                     OpenAiServer.Completion c = new OpenAiServer.Completion();
                     String text = LlamaBridge.nativeComplete(roles, contents, p.maxTokens,
-                            p.temperature, p.topP, p.topK, p.frequencyPenalty, p.presencePenalty, cb);
+                            p.temperature, p.topP, p.topK, p.frequencyPenalty, p.presencePenalty,
+                            p.thinking, cb);
                     int[] st = LlamaBridge.nativeLastStats();
                     if (text != null && text.startsWith("[ERROR]")) {
                         c.error = text.substring(7).trim();
@@ -312,21 +324,13 @@ public class LlmService extends Service implements OpenAiServer.Engine {
             return OpenAiServer.Completion.error(String.valueOf(e.getMessage()));
         } finally {
             servedRequests.incrementAndGet();
-            if (activeRequests.decrementAndGet() == 0 && loadedPath != null) {
+            if (activeRequests.decrementAndGet() == 0 && isReady()) {
                 setState(State.READY, "Ready • " + servedRequests.get() + " requests serve hui");
             }
         }
     }
 
     // ------------------------------------------------------------------ internals
-
-    private static ExecutorService newWorker() {
-        return Executors.newSingleThreadExecutor(r -> {
-            Thread t = new Thread(r, "llm-worker");
-            t.setPriority(Thread.NORM_PRIORITY + 1);
-            return t;
-        });
-    }
 
     private void setState(State s, String msg) {
         state = s;

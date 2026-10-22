@@ -48,6 +48,7 @@ public class OpenAiServer {
         String getModelId();
         String getSystemPrompt();
         int getDefaultMaxTokens();
+        boolean isThinkingDefault();
         Completion complete(String[] roles, String[] contents, GenParams params, LlamaBridge.TokenCallback cb);
     }
 
@@ -58,6 +59,7 @@ public class OpenAiServer {
         public int topK = 40;
         public float frequencyPenalty = 0f;
         public float presencePenalty = 0f;
+        public boolean thinking = true;
     }
 
     public static class Completion {
@@ -345,6 +347,7 @@ public class OpenAiServer {
         p.topK = body.optInt("top_k", 40);
         p.frequencyPenalty = (float) body.optDouble("frequency_penalty", 0);
         p.presencePenalty = (float) body.optDouble("presence_penalty", 0);
+        p.thinking = parseThinking(body, engine.isThinkingDefault());
         boolean stream = body.optBoolean("stream", false);
         JSONObject so = body.optJSONObject("stream_options");
         boolean includeUsage = so != null && so.optBoolean("include_usage", false);
@@ -432,6 +435,27 @@ public class OpenAiServer {
     }
 
     // ================================================================ helpers
+
+    /**
+     * Thinking on/off request se bhi badal sakte ho:
+     *   "thinking": true/false
+     *   "reasoning_effort": "none" = off, baaki = on
+     *   "chat_template_kwargs": {"enable_thinking": false}
+     * Kuch na diya ho to app ki setting.
+     */
+    private static boolean parseThinking(JSONObject body, boolean def) {
+        Object t = body.opt("thinking");
+        if (t instanceof Boolean) return (Boolean) t;
+        if (t instanceof JSONObject) {
+            String type = ((JSONObject) t).optString("type", "");
+            if (!type.isEmpty()) return !"disabled".equals(type);
+        }
+        String effort = body.optString("reasoning_effort", "");
+        if (!effort.isEmpty()) return !"none".equalsIgnoreCase(effort);
+        JSONObject kw = body.optJSONObject("chat_template_kwargs");
+        if (kw != null && kw.has("enable_thinking")) return kw.optBoolean("enable_thinking", def);
+        return def;
+    }
 
     /** content string ho ya [{type:"text", text:"..."}] array, dono handle */
     private static String contentToText(Object content) {

@@ -51,7 +51,7 @@ public class MainActivity extends AppCompatActivity implements LlmService.Status
     private LinearLayout downloadBox;
     private MaterialButton btnService, btnCopy, btnDownload, btnPick, btnSavePrompt, btnApply, btnBattery;
     private TextInputEditText etSystem, etPort, etCtx, etThreads, etMaxTokens, etApiKey;
-    private MaterialSwitch swLan, swAutoStart;
+    private MaterialSwitch swLan, swAutoStart, swThinking;
 
     private Prefs prefs;
     private LlmService service;
@@ -123,6 +123,7 @@ public class MainActivity extends AppCompatActivity implements LlmService.Status
         etApiKey = findViewById(R.id.etApiKey);
         swLan = findViewById(R.id.swLan);
         swAutoStart = findViewById(R.id.swAutoStart);
+        swThinking = findViewById(R.id.swThinking);
 
         loadSettingsIntoViews();
 
@@ -163,6 +164,8 @@ public class MainActivity extends AppCompatActivity implements LlmService.Status
         btnApply.setOnClickListener(v -> applySettings());
 
         swAutoStart.setOnCheckedChangeListener((b, checked) -> prefs.setAutoStart(checked));
+        // per-request setting hai, model reload nahi chahiye
+        swThinking.setOnCheckedChangeListener((b, checked) -> prefs.setThinking(checked));
 
         btnBattery.setOnClickListener(v -> askIgnoreBatteryOptimization());
 
@@ -261,6 +264,7 @@ public class MainActivity extends AppCompatActivity implements LlmService.Status
         etApiKey.setText(prefs.getApiKey());
         swLan.setChecked(prefs.isLanAccess());
         swAutoStart.setChecked(prefs.isAutoStart());
+        swThinking.setChecked(prefs.isThinking());
         refreshEndpoint();
     }
 

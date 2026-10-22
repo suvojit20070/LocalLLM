@@ -69,12 +69,16 @@ public final class Prefs {
     /** "" = auto. Gemma 4 auto-detect hota hai. */
     public String getTemplateOverride() { return sp.getString("template", ""); }
 
+    /** Thinking on: reply ke content me pehle <thought>...</thought>, phir jawab */
+    public boolean isThinking() { return sp.getBoolean("thinking", true); }
+    public void setThinking(boolean b) { sp.edit().putBoolean("thinking", b).apply(); }
+
     // ---------- server ----------
     public int getPort() { return sp.getInt("port", 8080); }
     public void setPort(int p) { sp.edit().putInt("port", p).apply(); }
 
     /** Request me max_tokens na ho to ye use hota hai */
-    public int getDefaultMaxTokens() { return sp.getInt("max_tokens", 1024); }
+    public int getDefaultMaxTokens() { return sp.getInt("max_tokens", 2048); }
     public void setDefaultMaxTokens(int n) { sp.edit().putInt("max_tokens", n).apply(); }
 
     /** Khaali = koi auth nahi. Set ho to "Authorization: Bearer <key>" chahiye. */

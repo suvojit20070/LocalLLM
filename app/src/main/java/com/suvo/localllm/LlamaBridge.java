@@ -37,7 +37,7 @@ public final class LlamaBridge {
     public static native String nativeComplete(String[] roles, String[] contents,
                                                int maxTokens, float temperature, float topP, int topK,
                                                float frequencyPenalty, float presencePenalty,
-                                               TokenCallback callback);
+                                               boolean thinking, TokenCallback callback);
 
     /** Last request: [promptTokens, completionTokens, reusedTokens, finishReason] */
     public static native int[] nativeLastStats();
