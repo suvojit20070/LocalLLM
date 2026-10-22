@@ -19,13 +19,14 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Android SDK
-        uses: android-actions/setup-android@v3
-
+      # GitHub runner me Android SDK pehle se installed hota hai, bas zaroori packages daalne hain
       - name: SDK packages (platform, build-tools, NDK, CMake)
         run: |
-          yes | sdkmanager --licenses > /dev/null
-          sdkmanager "platforms;android-35" "build-tools;35.0.0" "ndk;27.2.12479018" "cmake;3.22.1"
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          SDKM=$(ls -d "$ANDROID_HOME"/cmdline-tools/*/bin/sdkmanager | sort -V | tail -n 1)
+          echo "Using $SDKM"
+          yes | "$SDKM" --licenses > /dev/null || true
+          "$SDKM" --install "platforms;android-35" "build-tools;35.0.0" "ndk;27.2.12479018" "cmake;3.22.1"
 
       - name: llama.cpp source
         run: |
