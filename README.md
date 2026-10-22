@@ -42,6 +42,19 @@ print(c.chat.completions.create(model="gemma",
 
 Termux se bhi same URL chalega.
 
+## Naye features
+
+- **Speed preset:** 🚀 Rocket / ⚖️ Balanced / 🧠 Quality, phir Save & apply.
+- **Speed test:** prefill aur generate tok/s naapta hai. Settings badal ke compare karo.
+- **Performance settings:** context (0 = model max), threads (jawab / prompt alag), batch, ubatch,
+  flash attention, KV cache f16/q8/q4, fast cores pinning, mmap.
+- **Self-learning:** khaali time me chats se user ke baare me baatein seekh ke memory me rakhta hai,
+  har request ke system prompt me jodta hai. `GET/POST/DELETE /v1/memory`.
+  Request me `"learn": false` ya `"memory": false` bhej sakte ho.
+- **`GET /v1/info`:** model, settings, last request timing.
+- Har reply me `timings` (llama.cpp server jaisa): prompt/generate tok/s.
+- `scripts/chat.py`, `scripts/loop_chat.py`: Termux test scripts.
+
 ## Notes
 
 - Request me system message na ho to app wala default system prompt lagta hai.
