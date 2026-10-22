@@ -29,10 +29,24 @@ android {
         }
     }
 
+    // Fixed key: har GitHub build same signature ka APK banata hai,
+    // isliye naya APK purane ke upar update ho jata hai (uninstall nahi karna padta)
+    signingConfigs {
+        fixed {
+            storeFile file('release.jks')
+            storePassword 'localllm'
+            keyAlias 'localllm'
+            keyPassword 'localllm'
+        }
+    }
+
     buildTypes {
+        debug {
+            signingConfig signingConfigs.fixed
+        }
         release {
             minifyEnabled false
-            signingConfig signingConfigs.debug
+            signingConfig signingConfigs.fixed
         }
     }
 
