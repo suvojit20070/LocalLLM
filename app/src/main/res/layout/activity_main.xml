@@ -333,6 +333,13 @@
                 </com.google.android.material.textfield.TextInputLayout>
 
                 <com.google.android.material.materialswitch.MaterialSwitch
+                    android:id="@+id/swThinking"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:text="Thinking (&lt;thought&gt; block reply me)" />
+
+                <com.google.android.material.materialswitch.MaterialSwitch
                     android:id="@+id/swLan"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
