@@ -31,29 +31,36 @@ import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.content.ContextCompat;
 
 import com.google.android.material.button.MaterialButton;
+import com.google.android.material.button.MaterialButtonToggleGroup;
 import com.google.android.material.materialswitch.MaterialSwitch;
 import com.google.android.material.progressindicator.CircularProgressIndicator;
 import com.google.android.material.progressindicator.LinearProgressIndicator;
 import com.google.android.material.textfield.TextInputEditText;
 
+import org.json.JSONObject;
+
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.InputStream;
-import java.io.OutputStream;
+import java.util.List;
 import java.util.Locale;
 
-/** Sirf settings screen: model, system prompt, server settings. Chat koi nahi, endpoint use karo. */
+/** Settings screen: model, presets, memory, performance, server. Chat ke liye endpoint use karo. */
 public class MainActivity extends AppCompatActivity implements LlmService.StatusListener {
 
-    private TextView tvStatus, tvEndpoint, tvModelId, tvModel, tvDownload, tvBattery;
+    private TextView tvStatus, tvEndpoint, tvModelId, tvTiming, tvModel, tvModelInfo, tvDownload,
+            tvBattery, tvCpu, tvMemCount;
     private CircularProgressIndicator progressStatus;
     private LinearProgressIndicator progressDownload;
     private LinearLayout downloadBox;
-    private MaterialButton btnService, btnCopy, btnDownload, btnPick, btnSavePrompt, btnApply, btnBattery;
-    private TextInputEditText etSystem, etPort, etCtx, etThreads, etMaxTokens, etApiKey;
-    private MaterialSwitch swLan, swAutoStart, swThinking;
+    private MaterialButton btnService, btnBench, btnDownload, btnPick;
+    private TextInputEditText etSystem, etMaxMem, etCtx, etBatch, etThreads, etThreadsBatch, etUbatch,
+            etMaxTokens, etTemp, etTopK, etTopP, etMinP, etRepeat, etRepeatN, etPort, etApiKey;
+    private MaterialSwitch swLearning, swUseMemory, swFastGen, swFastBatch, swMmap, swThinking, swLan, swAutoStart;
+    private MaterialButtonToggleGroup tgFlash, tgKv;
 
     private Prefs prefs;
+    private MemoryStore memoryView;   // sirf dikhane ke liye (service apna alag object rakhta hai)
     private LlmService service;
     private boolean bound;
     private boolean copying;
@@ -102,29 +109,48 @@ public class MainActivity extends AppCompatActivity implements LlmService.Status
         tvStatus = findViewById(R.id.tvStatus);
         tvEndpoint = findViewById(R.id.tvEndpoint);
         tvModelId = findViewById(R.id.tvModelId);
+        tvTiming = findViewById(R.id.tvTiming);
         tvModel = findViewById(R.id.tvModel);
+        tvModelInfo = findViewById(R.id.tvModelInfo);
         tvDownload = findViewById(R.id.tvDownload);
         tvBattery = findViewById(R.id.tvBattery);
+        tvCpu = findViewById(R.id.tvCpu);
+        tvMemCount = findViewById(R.id.tvMemCount);
         progressStatus = findViewById(R.id.progressStatus);
         progressDownload = findViewById(R.id.progressDownload);
         downloadBox = findViewById(R.id.downloadBox);
         btnService = findViewById(R.id.btnService);
-        btnCopy = findViewById(R.id.btnCopy);
+        btnBench = findViewById(R.id.btnBench);
         btnDownload = findViewById(R.id.btnDownload);
         btnPick = findViewById(R.id.btnPick);
-        btnSavePrompt = findViewById(R.id.btnSavePrompt);
-        btnApply = findViewById(R.id.btnApply);
-        btnBattery = findViewById(R.id.btnBattery);
         etSystem = findViewById(R.id.etSystem);
-        etPort = findViewById(R.id.etPort);
+        etMaxMem = findViewById(R.id.etMaxMem);
         etCtx = findViewById(R.id.etCtx);
+        etBatch = findViewById(R.id.etBatch);
         etThreads = findViewById(R.id.etThreads);
+        etThreadsBatch = findViewById(R.id.etThreadsBatch);
+        etUbatch = findViewById(R.id.etUbatch);
         etMaxTokens = findViewById(R.id.etMaxTokens);
+        etTemp = findViewById(R.id.etTemp);
+        etTopK = findViewById(R.id.etTopK);
+        etTopP = findViewById(R.id.etTopP);
+        etMinP = findViewById(R.id.etMinP);
+        etRepeat = findViewById(R.id.etRepeat);
+        etRepeatN = findViewById(R.id.etRepeatN);
+        etPort = findViewById(R.id.etPort);
         etApiKey = findViewById(R.id.etApiKey);
+        swLearning = findViewById(R.id.swLearning);
+        swUseMemory = findViewById(R.id.swUseMemory);
+        swFastGen = findViewById(R.id.swFastGen);
+        swFastBatch = findViewById(R.id.swFastBatch);
+        swMmap = findViewById(R.id.swMmap);
+        swThinking = findViewById(R.id.swThinking);
         swLan = findViewById(R.id.swLan);
         swAutoStart = findViewById(R.id.swAutoStart);
-        swThinking = findViewById(R.id.swThinking);
+        tgFlash = findViewById(R.id.tgFlash);
+        tgKv = findViewById(R.id.tgKv);
 
+        tvCpu.setText("Is phone me: " + CpuInfo.get().describe());
         loadSettingsIntoViews();
 
         btnService.setOnClickListener(v -> {
@@ -137,7 +163,9 @@ public class MainActivity extends AppCompatActivity implements LlmService.Status
             }
         });
 
-        btnCopy.setOnClickListener(v -> {
+        btnBench.setOnClickListener(v -> runBenchmark());
+
+        findViewById(R.id.btnCopy).setOnClickListener(v -> {
             ClipboardManager cm = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
             cm.setPrimaryClip(ClipData.newPlainText("endpoint", baseUrl()));
             toast("Copy ho gaya");
@@ -156,18 +184,23 @@ public class MainActivity extends AppCompatActivity implements LlmService.Status
             if (!copying) pickModel.launch(new String[]{"*/*"});
         });
 
-        btnSavePrompt.setOnClickListener(v -> {
-            prefs.setSystemPrompt(textOf(etSystem));
-            toast("System prompt save ho gaya (agli request se lagega)");
-        });
+        findViewById(R.id.btnRocket).setOnClickListener(v -> preset(Prefs.PRESET_ROCKET, "🚀 Rocket"));
+        findViewById(R.id.btnBalanced).setOnClickListener(v -> preset(Prefs.PRESET_BALANCED, "⚖️ Balanced"));
+        findViewById(R.id.btnQuality).setOnClickListener(v -> preset(Prefs.PRESET_QUALITY, "🧠 Quality"));
 
-        btnApply.setOnClickListener(v -> applySettings());
+        findViewById(R.id.btnMemView).setOnClickListener(v -> showMemories());
+        findViewById(R.id.btnMemClear).setOnClickListener(v -> new AlertDialog.Builder(this)
+                .setTitle("Sab bhool jaye?")
+                .setMessage("Seekhi hui saari baatein delete ho jayengi.")
+                .setPositiveButton("Haan", (d, w) -> {
+                    memory().clear();
+                    refreshMemoryCount();
+                })
+                .setNegativeButton("Nahi", null)
+                .show());
 
-        swAutoStart.setOnCheckedChangeListener((b, checked) -> prefs.setAutoStart(checked));
-        // per-request setting hai, model reload nahi chahiye
-        swThinking.setOnCheckedChangeListener((b, checked) -> prefs.setThinking(checked));
-
-        btnBattery.setOnClickListener(v -> askIgnoreBatteryOptimization());
+        findViewById(R.id.btnApply).setOnClickListener(v -> applySettings());
+        findViewById(R.id.btnBattery).setOnClickListener(v -> askIgnoreBatteryOptimization());
 
         askNotificationPermission();
     }
@@ -184,11 +217,11 @@ public class MainActivity extends AppCompatActivity implements LlmService.Status
         ModelDownloader.finishIfDone(this);
         refreshModelUi();
         refreshBatteryUi();
+        refreshMemoryCount();
         if (prefs.getDownloadId() != -1) {
             ui.removeCallbacks(downloadPoll);
             ui.post(downloadPoll);
         }
-        // Model hai aur user ne stop nahi kiya -> server chalu rakho
         if (prefs.hasModel() && prefs.isServiceEnabled() && !isServiceActive()) {
             startService();
         }
@@ -213,7 +246,6 @@ public class MainActivity extends AppCompatActivity implements LlmService.Status
 
     private void bindToService() {
         if (bound) return;
-        // flag 0: bind karne se service start nahi hota, chal raha ho tab connect hota hai
         bound = bindService(new Intent(this, LlmService.class), connection, 0);
     }
 
@@ -228,10 +260,23 @@ public class MainActivity extends AppCompatActivity implements LlmService.Status
     public void onStatusChanged(LlmService.State state, String message) {
         lastState = state;
         tvStatus.setText(message);
-        boolean busy = state == LlmService.State.LOADING || state == LlmService.State.GENERATING;
+        boolean busy = state == LlmService.State.LOADING || state == LlmService.State.GENERATING
+                || state == LlmService.State.LEARNING || state == LlmService.State.BENCHMARK;
         progressStatus.setVisibility(busy ? View.VISIBLE : View.GONE);
         btnService.setText(isServiceActive() ? "Stop server" : "Start server");
+        btnBench.setEnabled(state == LlmService.State.READY);
         refreshEndpoint();
+        refreshModelInfo();
+        refreshMemoryCount();
+        if (service != null) {
+            StringBuilder t = new StringBuilder();
+            if (!service.getLastTiming().isEmpty()) t.append("Last: ").append(service.getLastTiming());
+            if (!service.getLastBench().isEmpty()) {
+                if (t.length() > 0) t.append('\n');
+                t.append("Speed test: ").append(service.getLastBench());
+            }
+            tvTiming.setText(t.toString());
+        }
     }
 
     private boolean isServiceActive() {
@@ -253,47 +298,178 @@ public class MainActivity extends AppCompatActivity implements LlmService.Status
         tvModelId.setText("model: " + prefs.getModelId() + "\napi key: " + key);
     }
 
+    private void refreshModelInfo() {
+        if (service == null || !service.isReady()) {
+            tvModelInfo.setVisibility(View.GONE);
+            return;
+        }
+        try {
+            JSONObject o = new JSONObject(service.infoJson());
+            long params = o.optLong("n_params");
+            String info = String.format(Locale.US,
+                    "%s • %.2fB params • model ka max context %,d • abhi %,d\n"
+                            + "threads %d/%d • batch %d • KV %s • cores %s",
+                    o.optString("desc"), params / 1e9, o.optInt("n_ctx_train"), o.optInt("n_ctx"),
+                    o.optInt("threads"), o.optInt("threads_batch"), o.optInt("batch"),
+                    o.optString("kv_type"), o.optString("cpus_gen"));
+            tvModelInfo.setText(info);
+            tvModelInfo.setVisibility(View.VISIBLE);
+        } catch (Exception e) {
+            tvModelInfo.setVisibility(View.GONE);
+        }
+    }
+
+    // ------------------------------------------------------------------ benchmark
+
+    private void runBenchmark() {
+        if (service == null) {
+            toast("Pehle server start karo");
+            return;
+        }
+        btnBench.setEnabled(false);
+        toast("Speed test chal raha hai (10-60 sec)…");
+        service.runBenchmark((pp, tg, err) -> {
+            btnBench.setEnabled(true);
+            if (err != null) {
+                toast(err);
+                return;
+            }
+            new AlertDialog.Builder(this)
+                    .setTitle("Speed test")
+                    .setMessage(String.format(Locale.US,
+                            "Prompt padhna (prefill): %.1f tok/s\nJawab likhna (generate): %.1f tok/s\n\n"
+                                    + "Threads / fast cores / KV badal ke dobara test karo, jo sabse tez ho wahi rakho.",
+                            pp, tg))
+                    .setPositiveButton("OK", null)
+                    .show();
+        });
+    }
+
     // ------------------------------------------------------------------ settings
 
     private void loadSettingsIntoViews() {
         etSystem.setText(prefs.getSystemPrompt());
-        etPort.setText(String.valueOf(prefs.getPort()));
+        etMaxMem.setText(String.valueOf(prefs.getMaxMemories()));
+        swLearning.setChecked(prefs.isLearning());
+        swUseMemory.setChecked(prefs.isUseMemory());
+
         etCtx.setText(String.valueOf(prefs.getContextSize()));
+        etBatch.setText(String.valueOf(prefs.getBatch()));
+        etUbatch.setText(String.valueOf(prefs.getUbatch()));
         etThreads.setText(String.valueOf(prefs.getThreads()));
+        etThreadsBatch.setText(String.valueOf(prefs.getThreadsBatch()));
+        int fa = prefs.getFlashAttn();
+        tgFlash.check(fa == 1 ? R.id.faOn : fa == 0 ? R.id.faOff : R.id.faAuto);
+        int kv = prefs.getKvType();
+        tgKv.check(kv == 1 ? R.id.kvQ8 : kv == 2 ? R.id.kvQ4 : R.id.kvF16);
+        swFastGen.setChecked(prefs.isFastCoresGen());
+        swFastBatch.setChecked(prefs.isFastCoresBatch());
+        swMmap.setChecked(prefs.isMmap());
+
         etMaxTokens.setText(String.valueOf(prefs.getDefaultMaxTokens()));
+        etTemp.setText(fmt(prefs.getTemperature()));
+        etTopK.setText(String.valueOf(prefs.getTopK()));
+        etTopP.setText(fmt(prefs.getTopP()));
+        etMinP.setText(fmt(prefs.getMinP()));
+        etRepeat.setText(fmt(prefs.getRepeatPenalty()));
+        etRepeatN.setText(String.valueOf(prefs.getRepeatLastN()));
+        swThinking.setChecked(prefs.isThinking());
+
+        etPort.setText(String.valueOf(prefs.getPort()));
         etApiKey.setText(prefs.getApiKey());
         swLan.setChecked(prefs.isLanAccess());
         swAutoStart.setChecked(prefs.isAutoStart());
-        swThinking.setChecked(prefs.isThinking());
         refreshEndpoint();
     }
 
+    private void preset(String name, String label) {
+        prefs.applyPreset(name);
+        loadSettingsIntoViews();
+        toast(label + " preset laga. Ab 💾 Save & apply dabao");
+    }
+
     private void applySettings() {
-        int port = parse(etPort, -1);
-        int ctx = parse(etCtx, -1);
-        int threads = parse(etThreads, -1);
-        int maxTok = parse(etMaxTokens, -1);
+        int ctx = parseInt(etCtx, -1), batch = parseInt(etBatch, -1), ubatch = parseInt(etUbatch, -1);
+        int threads = parseInt(etThreads, -1), threadsBatch = parseInt(etThreadsBatch, -1);
+        int maxTok = parseInt(etMaxTokens, -1), topK = parseInt(etTopK, -1), repeatN = parseInt(etRepeatN, -1);
+        int port = parseInt(etPort, -1), maxMem = parseInt(etMaxMem, -1);
+        float temp = parseFloat(etTemp, -1), topP = parseFloat(etTopP, -1), minP = parseFloat(etMinP, -1);
+        float repeat = parseFloat(etRepeat, -1);
+        int cores = CpuInfo.get().total;
 
-        if (port < 1024 || port > 65535) { toast("Port 1024 se 65535 ke beech rakho"); return; }
-        if (ctx < 512 || ctx > 32768) { toast("Context size 512 se 32768 ke beech rakho"); return; }
-        if (threads < 1 || threads > 16) { toast("Threads 1 se 16 ke beech rakho"); return; }
-        if (maxTok < 16 || maxTok > ctx) { toast("Max tokens 16 se context size tak"); return; }
+        if (ctx != 0 && (ctx < 512 || ctx > 131072)) { toast("Context 0 ya 512 se 131072"); return; }
+        if (batch < 32 || batch > 4096) { toast("Batch 32 se 4096"); return; }
+        if (ubatch < 32 || ubatch > batch) { toast("Ubatch 32 se batch tak"); return; }
+        if (threads < 1 || threads > cores) { toast("Threads 1 se " + cores); return; }
+        if (threadsBatch < 1 || threadsBatch > cores) { toast("Prompt threads 1 se " + cores); return; }
+        if (maxTok < 16 || maxTok > 32768) { toast("Max tokens 16 se 32768"); return; }
+        if (temp < 0 || temp > 2) { toast("Temperature 0 se 2"); return; }
+        if (topK < 0 || topK > 1000) { toast("Top K 0 se 1000"); return; }
+        if (topP <= 0 || topP > 1) { toast("Top P 0.01 se 1"); return; }
+        if (minP < 0 || minP > 1) { toast("Min P 0 se 1"); return; }
+        if (repeat < 0.5f || repeat > 2) { toast("Repeat penalty 0.5 se 2 (1 = off)"); return; }
+        if (repeatN < 0 || repeatN > 2048) { toast("Repeat last N 0 se 2048"); return; }
+        if (port < 1024 || port > 65535) { toast("Port 1024 se 65535"); return; }
+        if (maxMem < 1 || maxMem > 500) { toast("Max yaad 1 se 500"); return; }
 
+        int fa = tgFlash.getCheckedButtonId() == R.id.faOn ? 1
+                : tgFlash.getCheckedButtonId() == R.id.faOff ? 0 : -1;
+        int kv = tgKv.getCheckedButtonId() == R.id.kvQ8 ? 1
+                : tgKv.getCheckedButtonId() == R.id.kvQ4 ? 2 : 0;
+
+        prefs.saveLoadSettings(ctx, threads, threadsBatch, batch, ubatch, fa, kv,
+                swMmap.isChecked(), swFastGen.isChecked(), swFastBatch.isChecked());
+        prefs.saveGenSettings(maxTok, temp, topP, topK, minP, repeat, repeatN, swThinking.isChecked());
+        prefs.setSystemPrompt(textOf(etSystem));
+        prefs.setMaxMemories(maxMem);
+        prefs.setLearning(swLearning.isChecked());
+        prefs.setUseMemory(swUseMemory.isChecked());
         prefs.setPort(port);
-        prefs.setContextSize(ctx);
-        prefs.setThreads(threads);
-        prefs.setDefaultMaxTokens(maxTok);
         prefs.setApiKey(textOf(etApiKey));
         prefs.setLanAccess(swLan.isChecked());
-        prefs.setSystemPrompt(textOf(etSystem));
+        prefs.setAutoStart(swAutoStart.isChecked());
         refreshEndpoint();
 
         if (isServiceActive()) {
-            LlmService.reload(this);
-            toast("Settings save. Server aur model restart ho rahe hain");
+            LlmService.reload(this);   // load settings badli ho tabhi model reload hota hai
+            toast("Save ho gaya. Server apply kar raha hai");
         } else {
-            toast("Settings save ho gayi");
+            toast("Save ho gaya");
         }
+    }
+
+    // ------------------------------------------------------------------ memory
+
+    private MemoryStore memory() {
+        if (service != null) return service.memory();
+        if (memoryView == null) memoryView = new MemoryStore(this);
+        return memoryView;
+    }
+
+    private void refreshMemoryCount() {
+        tvMemCount.setText(memory().size() + " baatein yaad");
+    }
+
+    private void showMemories() {
+        List<MemoryStore.Item> items = memory().list();
+        if (items.isEmpty()) {
+            toast("Abhi kuch yaad nahi. Server se baat karo, khaali time me seekhega.");
+            return;
+        }
+        String[] arr = new String[items.size()];
+        for (int i = 0; i < items.size(); i++) arr[i] = "• " + items.get(i).text;
+        new AlertDialog.Builder(this)
+                .setTitle("Seekhi hui baatein (tap = hatao)")
+                .setItems(arr, (d, which) -> new AlertDialog.Builder(this)
+                        .setMessage("Ye baat hata dein?\n\n" + items.get(which).text)
+                        .setPositiveButton("Hatao", (d2, w2) -> {
+                            memory().remove(which);
+                            refreshMemoryCount();
+                        })
+                        .setNegativeButton("Rehne do", null)
+                        .show())
+                .setPositiveButton("Band", null)
+                .show();
     }
 
     // ------------------------------------------------------------------ model: download
@@ -311,8 +487,7 @@ public class MainActivity extends AppCompatActivity implements LlmService.Status
         }
         new AlertDialog.Builder(this)
                 .setTitle("Model download karein?")
-                .setMessage("Gemma 4 E2B (Q4_K_M), lagbhag 3.1 GB. Mobile data pe bhi chalega.\n"
-                        + "App band kar doge tab bhi download chalta rahega.")
+                .setMessage("Gemma 4 E2B (Q4_K_M), lagbhag 3.1 GB.\nApp band kar doge tab bhi download chalta rahega.")
                 .setPositiveButton("Download", (d, w) -> {
                     ModelDownloader.start(this);
                     refreshModelUi();
@@ -357,7 +532,6 @@ public class MainActivity extends AppCompatActivity implements LlmService.Status
             return false;
         }
 
-        // fail
         String msg = p.message;
         ModelDownloader.cancel(this);
         refreshModelUi();
@@ -367,7 +541,6 @@ public class MainActivity extends AppCompatActivity implements LlmService.Status
 
     // ------------------------------------------------------------------ model: pick file
 
-    /** Chuni hui .gguf ko app ke model folder me copy karte hain (koi storage permission nahi chahiye). */
     private void copyModelToApp(Uri uri) {
         String name = queryName(uri);
         long size = querySize(uri);
@@ -398,7 +571,7 @@ public class MainActivity extends AppCompatActivity implements LlmService.Status
             File tmp = new File(dir, name + ".part");
             String err = null;
             try (InputStream in = getContentResolver().openInputStream(uri);
-                 OutputStream os = new FileOutputStream(tmp)) {
+                 FileOutputStream os = new FileOutputStream(tmp)) {
                 if (in == null) throw new IllegalStateException("File khul nahi rahi");
                 byte[] buf = new byte[1 << 20];
                 long done = 0;
@@ -417,7 +590,7 @@ public class MainActivity extends AppCompatActivity implements LlmService.Status
                         }
                     }
                 }
-                ((FileOutputStream) os).getFD().sync();
+                os.getFD().sync();
             } catch (Exception e) {
                 err = e.getMessage();
             }
@@ -454,10 +627,9 @@ public class MainActivity extends AppCompatActivity implements LlmService.Status
         refreshModelUi();
         refreshEndpoint();
         toast("Model set ho gaya, server start ho raha hai");
-        startService();   // naya path hai to service khud reload karega
+        startService();
     }
 
-    /** Purani model files hatao taaki 3GB+ jagah bekar na jaye */
     private void deleteOtherModels(File keep) {
         if (prefs.getDownloadId() != -1) return;
         File[] files = Prefs.modelDir(this).listFiles();
@@ -518,7 +690,7 @@ public class MainActivity extends AppCompatActivity implements LlmService.Status
         tvBattery.setText(ignoring
                 ? "✓ Battery optimization off hai. Service background me chalti rahegi."
                 : "Battery optimization on hai, Android kuch der baad server band kar sakta hai.");
-        btnBattery.setVisibility(ignoring ? View.GONE : View.VISIBLE);
+        findViewById(R.id.btnBattery).setVisibility(ignoring ? View.GONE : View.VISIBLE);
     }
 
     @SuppressLint("BatteryLife")
@@ -539,12 +711,25 @@ public class MainActivity extends AppCompatActivity implements LlmService.Status
         return cs == null ? "" : cs.toString().trim();
     }
 
-    private static int parse(TextInputEditText et, int def) {
+    private static int parseInt(TextInputEditText et, int def) {
         try {
             return Integer.parseInt(textOf(et));
         } catch (NumberFormatException e) {
             return def;
         }
+    }
+
+    private static float parseFloat(TextInputEditText et, float def) {
+        try {
+            return Float.parseFloat(textOf(et));
+        } catch (NumberFormatException e) {
+            return def;
+        }
+    }
+
+    private static String fmt(float f) {
+        String s = String.format(Locale.US, "%.2f", f);
+        return s.endsWith("0") ? s.substring(0, s.length() - 1) : s;
     }
 
     private void toast(String s) {

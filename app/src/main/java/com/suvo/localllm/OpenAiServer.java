@@ -30,9 +30,14 @@ import java.util.concurrent.Executors;
  * Chhota sa OpenAI-compatible HTTP server (koi library nahi).
  *
  * Endpoints:
- *   GET  /health
- *   GET  /v1/models
- *   POST /v1/chat/completions   (stream true/false dono)
+ *   GET    /health
+ *   GET    /v1/models
+ *   GET    /v1/info                 model + speed settings + last request timing
+ *   POST   /v1/chat/completions     (stream true/false dono)
+ *   GET    /v1/memory               seekhi hui baatein
+ *   POST   /v1/memory               {"text": "..."} khud jodo
+ *   DELETE /v1/memory               sab bhool jao
+ *   DELETE /v1/memory/{index}       ek baat hatao
  *
  * Ek time pe ek hi reply generate hota hai, baaki requests line me wait karti hain.
  */
@@ -46,26 +51,39 @@ public class OpenAiServer {
         boolean isReady();
         String getStatusMessage();
         String getModelId();
-        String getSystemPrompt();
-        int getDefaultMaxTokens();
-        boolean isThinkingDefault();
+        /** Request ka system prompt (ya null) le ke final system prompt (app default + memory) */
+        String buildSystemPrompt(String requestSystem, boolean useMemory);
+        GenParams defaultParams();
         Completion complete(String[] roles, String[] contents, GenParams params, LlamaBridge.TokenCallback cb);
+        /** Ek user/assistant baatcheet poori hui, learning ke liye */
+        void onExchange(String userText, String reply);
+        String infoJson();
+        MemoryStore memory();
+        int maxMemories();
     }
 
     public static class GenParams {
-        public int maxTokens;
+        public int maxTokens = 1024;
         public float temperature = 0.7f;
         public float topP = 0.95f;
         public int topK = 40;
+        public float minP = 0.05f;
+        public float repeatPenalty = 1.1f;
+        public int repeatLastN = 64;
         public float frequencyPenalty = 0f;
         public float presencePenalty = 0f;
-        public boolean thinking = true;
+        public int seed = -1;
+        public boolean thinking = false;
+        public boolean learn = true;
+        public boolean useMemory = true;
+        public boolean internal = false;   // learner jaise andar ke kaam (stats/learning me nahi ginte)
     }
 
     public static class Completion {
         public String text = "";
         public String error;
         public int promptTokens, completionTokens, reusedTokens;
+        public int prefillMs, genMs;
         public int finish = LlamaBridge.FINISH_STOP;
 
         public static Completion error(String e) {
@@ -86,7 +104,6 @@ public class OpenAiServer {
 
     private ServerSocket serverSocket;
     private ExecutorService clients;
-    private Thread acceptThread;
     private volatile boolean running;
 
     public OpenAiServer(Engine engine, int port, boolean lan, String apiKey) {
@@ -107,7 +124,7 @@ public class OpenAiServer {
         clients = Executors.newFixedThreadPool(8);
         running = true;
 
-        acceptThread = new Thread(() -> {
+        Thread acceptThread = new Thread(() -> {
             while (running) {
                 try {
                     Socket s = serverSocket.accept();
@@ -152,7 +169,6 @@ public class OpenAiServer {
             Request req = readRequest(in);
             if (req == null) return;
 
-            // CORS (browser based clients ke liye)
             if ("OPTIONS".equals(req.method)) {
                 sendRaw(out, 204, "text/plain", new byte[0]);
                 return;
@@ -177,11 +193,20 @@ public class OpenAiServer {
                 return;
             }
 
+            if (path.startsWith("/v1/memory") || path.startsWith("/memory")) {
+                memoryEndpoint(req, path, out);
+                return;
+            }
+
             switch (path) {
                 case "/v1/models":
                 case "/models":
-                    if (!"GET".equals(req.method)) { sendError(out, 405, "Method not allowed", "invalid_request_error"); return; }
                     sendJson(out, 200, modelsJson());
+                    break;
+
+                case "/v1/info":
+                case "/info":
+                    sendJson(out, 200, new JSONObject(engine.infoJson()));
                     break;
 
                 case "/v1/chat/completions":
@@ -243,8 +268,10 @@ public class OpenAiServer {
             if (semi >= 0) sizeLine = sizeLine.substring(0, semi);
             int size = Integer.parseInt(sizeLine.trim(), 16);
             if (size == 0) {
-                //noinspection StatementWithEmptyBody
-                while (true) { String t = readLine(in); if (t == null || t.isEmpty()) break; }
+                while (true) {
+                    String t = readLine(in);
+                    if (t == null || t.isEmpty()) break;
+                }
                 break;
             }
             if (bos.size() + size > MAX_BODY) throw new IOException("Body bahut badi hai");
@@ -256,7 +283,7 @@ public class OpenAiServer {
                 read += n;
             }
             bos.write(buf);
-            readLine(in); // chunk ke baad CRLF
+            readLine(in);
         }
         return bos.toByteArray();
     }
@@ -297,6 +324,39 @@ public class OpenAiServer {
         return o;
     }
 
+    private void memoryEndpoint(Request req, String path, OutputStream out) throws IOException, JSONException {
+        MemoryStore mem = engine.memory();
+        String rest = path.substring(path.indexOf("memory") + 6);   // "" ya "/3"
+
+        if ("GET".equals(req.method)) {
+            JSONArray arr = new JSONArray();
+            List<MemoryStore.Item> items = mem.list();
+            for (int i = 0; i < items.size(); i++) {
+                arr.put(new JSONObject().put("index", i).put("text", items.get(i).text)
+                        .put("time", items.get(i).time));
+            }
+            sendJson(out, 200, new JSONObject().put("count", items.size()).put("data", arr));
+        } else if ("POST".equals(req.method)) {
+            JSONObject body = new JSONObject(new String(req.body, StandardCharsets.UTF_8));
+            boolean added = mem.add(body.optString("text", ""), engine.maxMemories());
+            sendJson(out, 200, new JSONObject().put("added", added).put("count", mem.size()));
+        } else if ("DELETE".equals(req.method)) {
+            if (rest.startsWith("/") && rest.length() > 1) {
+                try {
+                    mem.remove(Integer.parseInt(rest.substring(1)));
+                } catch (NumberFormatException e) {
+                    sendError(out, 400, "Index number hona chahiye", "invalid_request_error");
+                    return;
+                }
+            } else {
+                mem.clear();
+            }
+            sendJson(out, 200, new JSONObject().put("count", mem.size()));
+        } else {
+            sendError(out, 405, "Method not allowed", "invalid_request_error");
+        }
+    }
+
     private void chatCompletions(Request req, OutputStream out) throws IOException, JSONException {
         JSONObject body;
         try {
@@ -331,30 +391,43 @@ public class OpenAiServer {
             return;
         }
 
-        // Request me system prompt nahi hai to app wala system prompt lagao
-        String sys = engine.getSystemPrompt();
-        boolean hasSystem = "system".equals(roles.get(0)) || "developer".equals(roles.get(0));
-        if (!hasSystem && sys != null && !sys.trim().isEmpty()) {
-            roles.add(0, "system");
-            contents.add(0, sys);
-        }
-
-        // ---- params ----
-        GenParams p = new GenParams();
-        p.maxTokens = body.optInt("max_completion_tokens", body.optInt("max_tokens", engine.getDefaultMaxTokens()));
-        p.temperature = (float) body.optDouble("temperature", 0.7);
-        p.topP = (float) body.optDouble("top_p", 0.95);
-        p.topK = body.optInt("top_k", 40);
-        p.frequencyPenalty = (float) body.optDouble("frequency_penalty", 0);
-        p.presencePenalty = (float) body.optDouble("presence_penalty", 0);
-        p.thinking = parseThinking(body, engine.isThinkingDefault());
+        // ---- params (request me na ho to app ki setting) ----
+        GenParams p = engine.defaultParams();
+        p.maxTokens = body.optInt("max_completion_tokens", body.optInt("max_tokens", p.maxTokens));
+        p.temperature = (float) body.optDouble("temperature", p.temperature);
+        p.topP = (float) body.optDouble("top_p", p.topP);
+        p.topK = body.optInt("top_k", p.topK);
+        p.minP = (float) body.optDouble("min_p", p.minP);
+        p.repeatPenalty = (float) body.optDouble("repeat_penalty", p.repeatPenalty);
+        p.repeatLastN = body.optInt("repeat_last_n", p.repeatLastN);
+        p.frequencyPenalty = (float) body.optDouble("frequency_penalty", p.frequencyPenalty);
+        p.presencePenalty = (float) body.optDouble("presence_penalty", p.presencePenalty);
+        p.seed = body.optInt("seed", p.seed);
+        p.thinking = parseThinking(body, p.thinking);
+        p.learn = body.optBoolean("learn", p.learn);
+        p.useMemory = body.optBoolean("memory", p.useMemory);
         boolean stream = body.optBoolean("stream", false);
         JSONObject so = body.optJSONObject("stream_options");
         boolean includeUsage = so != null && so.optBoolean("include_usage", false);
 
+        // ---- system prompt (app default + memory) ----
+        boolean hasSystem = "system".equals(roles.get(0)) || "developer".equals(roles.get(0));
+        String sys = engine.buildSystemPrompt(hasSystem ? contents.get(0) : null, p.useMemory);
+        if (hasSystem) {
+            contents.set(0, sys);
+        } else if (sys != null && !sys.trim().isEmpty()) {
+            roles.add(0, "system");
+            contents.add(0, sys);
+        }
+
         if (!engine.isReady()) {
             sendError(out, 503, "Model ready nahi hai: " + engine.getStatusMessage(), "server_error");
             return;
+        }
+
+        String lastUser = "";
+        for (int i = roles.size() - 1; i >= 0; i--) {
+            if ("user".equals(roles.get(i))) { lastUser = contents.get(i); break; }
         }
 
         String[] r = roles.toArray(new String[0]);
@@ -381,8 +454,10 @@ public class OpenAiServer {
                     .put("created", created)
                     .put("model", model)
                     .put("choices", new JSONArray().put(choice))
-                    .put("usage", usageJson(res));
+                    .put("usage", usageJson(res))
+                    .put("timings", timingsJson(res));
             sendJson(out, 200, o);
+            if (p.learn) engine.onExchange(lastUser, res.text);
             return;
         }
 
@@ -396,7 +471,6 @@ public class OpenAiServer {
         out.write(head.getBytes(StandardCharsets.ISO_8859_1));
         out.flush();
 
-        // pehla chunk: role
         writeSse(out, chunkJson(id, created, model, new JSONObject().put("role", "assistant").put("content", ""), null));
 
         Completion res = engine.complete(r, c, p, utf8 -> {
@@ -404,8 +478,7 @@ public class OpenAiServer {
                 String piece = new String(utf8, StandardCharsets.UTF_8);
                 writeSse(out, chunkJson(id, created, model, new JSONObject().put("content", piece), null));
             } catch (Exception e) {
-                // client gaya -> exception native ko generation rokne ka signal deta hai
-                throw new RuntimeException(e);
+                throw new RuntimeException(e);   // client gaya -> native generation rok deta hai
             }
         });
 
@@ -423,25 +496,28 @@ public class OpenAiServer {
                             .put("created", created)
                             .put("model", model)
                             .put("choices", new JSONArray())
-                            .put("usage", usageJson(res));
+                            .put("usage", usageJson(res))
+                            .put("timings", timingsJson(res));
                     writeSse(out, u.toString());
                 }
             }
             writeSse(out, "[DONE]");
-            writeChunk(out, new byte[0]); // chunked stream ka end
+            writeChunk(out, new byte[0]);
         } catch (IOException ignored) {
             // client already chala gaya
+        }
+        if (res.error == null && p.learn && res.finish != LlamaBridge.FINISH_CANCELLED) {
+            engine.onExchange(lastUser, res.text);
         }
     }
 
     // ================================================================ helpers
 
     /**
-     * Thinking on/off request se bhi badal sakte ho:
+     * Thinking on/off request se:
      *   "thinking": true/false
      *   "reasoning_effort": "none" = off, baaki = on
      *   "chat_template_kwargs": {"enable_thinking": false}
-     * Kuch na diya ho to app ki setting.
      */
     private static boolean parseThinking(JSONObject body, boolean def) {
         Object t = body.opt("thinking");
@@ -506,6 +582,19 @@ public class OpenAiServer {
                 .put("prompt_tokens_details", new JSONObject().put("cached_tokens", res.reusedTokens));
     }
 
+    /** llama.cpp server jaisa timings block: speed check karne ke liye */
+    private static JSONObject timingsJson(Completion res) throws JSONException {
+        int processed = Math.max(0, res.promptTokens - res.reusedTokens);
+        return new JSONObject()
+                .put("cache_n", res.reusedTokens)
+                .put("prompt_n", processed)
+                .put("prompt_ms", res.prefillMs)
+                .put("prompt_per_second", res.prefillMs > 0 ? processed * 1000.0 / res.prefillMs : 0)
+                .put("predicted_n", res.completionTokens)
+                .put("predicted_ms", res.genMs)
+                .put("predicted_per_second", res.genMs > 0 ? res.completionTokens * 1000.0 / res.genMs : 0);
+    }
+
     private static void writeSse(OutputStream out, String data) throws IOException {
         writeChunk(out, ("data: " + data + "\n\n").getBytes(StandardCharsets.UTF_8));
     }
@@ -537,7 +626,7 @@ public class OpenAiServer {
                 + "Content-Length: " + body.length + "\r\n"
                 + "Access-Control-Allow-Origin: *\r\n"
                 + "Access-Control-Allow-Headers: *\r\n"
-                + "Access-Control-Allow-Methods: GET, POST, OPTIONS\r\n"
+                + "Access-Control-Allow-Methods: GET, POST, DELETE, OPTIONS\r\n"
                 + "Connection: close\r\n\r\n";
         out.write(head.getBytes(StandardCharsets.ISO_8859_1));
         out.write(body);
