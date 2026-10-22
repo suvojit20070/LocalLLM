@@ -1,1 +1,63 @@
+plugins {
+    id 'com.android.application'
+}
 
+android {
+    namespace 'com.suvo.localllm'
+    compileSdk 35
+    ndkVersion '27.2.12479018'
+
+    defaultConfig {
+        applicationId 'com.suvo.localllm'
+        minSdk 26
+        targetSdk 35
+        versionCode 1
+        versionName '1.0'
+
+        ndk {
+            // Modern phones sab arm64 hain. Emulator pe test karna ho to 'x86_64' add karo.
+            abiFilters 'arm64-v8a'
+        }
+
+        externalNativeBuild {
+            cmake {
+                // Debug build me bhi native code optimized rahe, warna inference 10x slow hoga
+                arguments '-DCMAKE_BUILD_TYPE=Release'
+                cppFlags '-O3'
+                cFlags '-O3'
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.debug
+        }
+    }
+
+    externalNativeBuild {
+        cmake {
+            path file('src/main/cpp/CMakeLists.txt')
+            version '3.22.1'
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    packaging {
+        jniLibs {
+            useLegacyPackaging false
+        }
+    }
+}
+
+dependencies {
+    implementation 'androidx.appcompat:appcompat:1.7.0'
+    implementation 'androidx.core:core:1.13.1'
+    implementation 'androidx.activity:activity:1.9.3'
+    implementation 'com.google.android.material:material:1.12.0'
+}
